@@ -41,6 +41,25 @@ def save_json(key, record):
     with open(path, "w", encoding="utf-8") as file:
         json.dump(data, file, indent=4)
 
+def delete_json_record(key, index):
+    path = FILES.get(key)
+    data = load_json(key)
+    if 0 <= index < len(data):
+        data.pop(index)
+        with open(path, "w", encoding="utf-8") as file:
+            json.dump(data, file, indent=4)
+        return True
+    return False
+
+def update_json_record(key, index, updated_record):
+    path= FILES.get(key)
+    data = load_json(key)
+    if 0 <= len(data):
+        data[index] = updated_record
+        with open(path, "w", encoding="utf-8") as file:
+            json.dump(data, file, indent=4)
+        return True
+    return False
 
 def main(page: ft.Page):
     page.title = "Miracles Church of God International"
@@ -433,26 +452,89 @@ def main(page: ft.Page):
 
         return ft.ListView(controls, expand=True, spacing=15)
 
-    def format_record_format(title: str, fields: list[tuple[str, str]]):
+    def open_edit_dialog(file_key:str, index:int, record: dict):
+        #create a a textfield for every existing field in the JSON object (including any extra fields)
+        field_inputs = {}
+        for k, v in record.items():
+            label_text = k.replace("_", "  ").title()
+            field_inputs[k] = ft.TextField(
+                label=label_text,
+                value="" if v is None else str(v),
+                max_lines=len(str(v or "")) > 60,
+                border_color=COLOR_BLUE,
+                width=320
+            )
+
+        
+        def close_edit(e=None):
+            edit_dialog.open = False
+            page.update()
+
+        def save_changes(e):
+            updated = {k:tf.value for k, tf in field_inputs.items()}
+            if update_json_record(file_key, index, updated):
+                edit_dialog.open = False
+                notify("Record updated successfully!", COLOR_GREEN)
+                rebuild_ui()
+            else:
+                notify("Could not update record.", COLOR_PURPLE)
+
+        edit_dialog = ft.AlertDialog(
+            title=ft.Text(f'Edit Record #{index +  1}', color=COLOR_BLUE, weight=ft.FontWeight.BOLD),
+            content=ft.Column(list(field_inputs.values()), tight=True, scroll=ft.ScrollMode.AUTO),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_edit),
+                ft.Button("Save Changes", bgcolor=COLOR_GREEN, color=COLOR_WHITE, on_click=save_changes)
+            ]
+        )
+
+        edit_dialog.open = True
+        page.show_dialog(edit_dialog)
+
+    def handle_delete_record(file_key: str, index:int):
+        if delete_json_record(file_key, index):
+            notify("Record deleted!", COLOR_PURPLE)
+            rebuild_ui()
+        else:
+            notify("Could not delete record", COLOR_PURPLE)
+        
+    def format_record_card(title: str, record: dict, file_key: str, index:int):
+        #automatically renders alll keys in 'record', including any extra fields you add
         field_controls = [
             ft.Text(
-                f"{label}: {value or 'N/A'}",
+                f"{key.replace('_','_').title()}: {val if val not in (None, '') else 'N/A'}",
                 size=14,
-                color=COLOR_DARK_TEXT,
+                color=COLOR_DARK_TEXT
             )
-            for label, value in fields
+            for key, val in record.items()
         ]
+
         return ft.Container(
             content=ft.Column([
-                ft.Text(title, size=15, weight=ft.FontWeight.BOLD, color=COLOR_BLUE),
+                ft.Row([
+                    ft.Text(title, size=15, weight=ft.FontWeight.BOLD, color=COLOR_BLUE),
+                    ft.Row([
+                        ft.IconButton(
+                            icon=ft.Icons.EDIT,
+                            tooltip="Edit Record",
+                            icon_color=COLOR_BLUE,
+                            on_click=lambda e, k=file_key, i=index, r=record: open_edit_dialog(k, i, r)
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.DELETE,
+                            tooltip="Delete record",
+                            icon_color=COLOR_PURPLE,
+                            on_click=lambda e, k=file_key, i=index: handle_delete_record(k, i)
+                        )  
+                    ], spacing=0)
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 *field_controls
             ], spacing=4),
             bgcolor="#F9F9F9",
-            border=ft.Border.all(2, COLOR_GOLD),
+            border=ft.Border.all(1, COLOR_GOLD),
             border_radius=8,
             padding=12
         )
-
     def dashboard_view():
         if not is_minister:
             return ft.Column([
@@ -464,35 +546,31 @@ def main(page: ft.Page):
         vol_data = load_json("volunteer")
 
         prayer_cards = [
-            format_record_format(
-                title=f"Prayer Request {idx + 1}",
-                fields=[
-                    ("Full Name", p.get("name", "")),
-                    ("Prayer Request", p.get("request", ""))
-                ]
+            format_record_card(
+                title=f"Prayer Requests {idx + 1}",
+                record=p,
+                file_key="prayer",
+                index=idx
             )
             for idx, p in enumerate(prayer_data)
         ] or [ft.Text("No prayer request found", color=COLOR_DARK_TEXT)]
 
         membership_cards = [
-            format_record_format(
+            format_record_card(
                 title=f"Membership Application {idx + 1}",
-                fields=[
-                    ("Full Name", m.get("name", "")),
-                    ("Email Address", m.get("email", "")),
-                    ("Phone Number", m.get("phone", ""))
-                ]
+                record=m,
+                file_key="membership",
+                index=idx
             )
             for idx, m in enumerate(mem_data)
         ] or [ft.Text("No memberships applications found.", color=COLOR_DARK_TEXT)]
 
         volunteer_cards = [
-            format_record_format(
+            format_record_card(
                 title=f"Volunteer Signup {idx + 1}",
-                fields=[
-                    ("Full Name", v.get("name", "")),
-                    ("Department", v.get("department", ""))
-                ]
+                record=v,
+                file_key="volunteer",
+                index=idx
             )
             for idx, v in enumerate(vol_data)
         ] or [ft.Text("No volunteer signup found", color=COLOR_DARK_TEXT)]
