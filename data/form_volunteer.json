@@ -2,5 +2,13 @@
     {
         "name": "Clark Kent",
         "department": "Ushering"
+    },
+    {
+        "name": "Mark Benson",
+        "department": "Media & Tech"
+    },
+    {
+        "name": "Queen Becky ",
+        "department": "Worship Ministry"
     }
 ]
