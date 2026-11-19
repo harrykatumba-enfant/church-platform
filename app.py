@@ -433,6 +433,26 @@ def main(page: ft.Page):
 
         return ft.ListView(controls, expand=True, spacing=15)
 
+    def format_record_format(title: str, fields: list[tuple[str, str]]):
+        field_controls = [
+            ft.Text(
+                f"{label}: {value or 'N/A'}",
+                size=14,
+                color=COLOR_DARK_TEXT,
+            )
+            for label, value in fields
+        ]
+        return ft.Container(
+            content=ft.Column([
+                ft.Text(title, size=15, weight=ft.FontWeight.BOLD, color=COLOR_BLUE),
+                *field_controls
+            ], spacing=4),
+            bgcolor="#F9F9F9",
+            border=ft.Border.all(2, COLOR_GOLD),
+            border_radius=8,
+            padding=12
+        )
+
     def dashboard_view():
         if not is_minister:
             return ft.Column([
@@ -442,6 +462,40 @@ def main(page: ft.Page):
         prayer_data = load_json("prayer")
         mem_data = load_json("membership")
         vol_data = load_json("volunteer")
+
+        prayer_cards = [
+            format_record_format(
+                title=f"Prayer Request {idx + 1}",
+                fields=[
+                    ("Full Name", p.get("name", "")),
+                    ("Prayer Request", p.get("request", ""))
+                ]
+            )
+            for idx, p in enumerate(prayer_data)
+        ] or [ft.Text("No prayer request found", color=COLOR_DARK_TEXT)]
+
+        membership_cards = [
+            format_record_format(
+                title=f"Membership Application {idx + 1}",
+                fields=[
+                    ("Full Name", m.get("name", "")),
+                    ("Email Address", m.get("email", "")),
+                    ("Phone Number", m.get("phone", ""))
+                ]
+            )
+            for idx, m in enumerate(mem_data)
+        ] or [ft.Text("No memberships applications found.", color=COLOR_DARK_TEXT)]
+
+        volunteer_cards = [
+            format_record_format(
+                title=f"Volunteer Signup {idx + 1}",
+                fields=[
+                    ("Full Name", v.get("name", "")),
+                    ("Department", v.get("department", ""))
+                ]
+            )
+            for idx, v in enumerate(vol_data)
+        ] or [ft.Text("No volunteer signup found", color=COLOR_DARK_TEXT)]
 
         dashboard_tabs = ft.Tabs(
             length=3,
@@ -459,43 +513,11 @@ def main(page: ft.Page):
                         ],
                     ),
                     ft.TabBarView(
-                        height=220,
+                        height=360,
                         controls=[
-                            ft.Container(
-                                content=ft.Column(
-                                    [
-                                        ft.Text(f"• {p.get('name')} : {p.get('request')}", color=COLOR_DARK_TEXT)
-                                        for p in prayer_data
-                                    ]
-                                    or [ft.Text("No records", color=COLOR_DARK_TEXT)]
-                                ),
-                                padding=10,
-                            ),
-                            ft.Container(
-                                content=ft.Column(
-                                    [
-                                        ft.Text(
-                                            f"• {m.get('name')} | {m.get('email')} | {m.get('phone')}",
-                                            color=COLOR_DARK_TEXT,
-                                        )
-                                        for m in mem_data
-                                    ]
-                                    or [ft.Text("No Records", color=COLOR_DARK_TEXT)]
-                                ),
-                                padding=10,
-                            ),
-                            ft.Container(
-                                content=ft.Column(
-                                    [
-                                        ft.Text(
-                                            f"• {v.get('name')} --> {v.get('department')}", color=COLOR_DARK_TEXT
-                                        )
-                                        for v in vol_data
-                                    ]
-                                    or [ft.Text("No Records", color=COLOR_DARK_TEXT)]
-                                ),
-                                padding=10,
-                            ),
+                           ft.ListView(prayer_cards, spacing=10, padding=10),
+                           ft.ListView(membership_cards, spacing=10, padding=10),
+                           ft.ListView(volunteer_cards, spacing=10, padding=10)
                         ],
                     ),
                 ]
