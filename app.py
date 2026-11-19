@@ -549,7 +549,16 @@ def main(page: ft.Page):
         action_button = (
             ft.Button("Logout Minister", on_click=perform_logout)
             if is_minister
-            else ft.OutlinedButton("Minister Login", bgcolor=COLOR_WHITE, color=COLOR_BLUE, on_click=open_login)
+            else ft.Button(
+                "Minister Login",        
+                bgcolor=COLOR_GOLD,
+                color=COLOR_DARK_TEXT,
+                style=ft.ButtonStyle(
+                    shape=ft.RoundedRectangleBorder(radius=8),
+                    padding=8,
+                ),
+                on_click=open_login,
+            )
         )
 
         app_bar = ft.Container(
