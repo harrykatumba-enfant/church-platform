@@ -457,10 +457,12 @@ def main(page: ft.Page):
         field_inputs = {}
         for k, v in record.items():
             label_text = k.replace("_", "  ").title()
+            is_long = len(str(v or"")) > 60
             field_inputs[k] = ft.TextField(
                 label=label_text,
                 value="" if v is None else str(v),
-                max_lines=len(str(v or "")) > 60,
+                multiline=is_long,
+                max_lines=4 if is_long else 1,
                 border_color=COLOR_BLUE,
                 width=320
             )
