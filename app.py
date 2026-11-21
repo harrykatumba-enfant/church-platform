@@ -345,6 +345,79 @@ def main(page: ft.Page):
         nonlocal search_query
         search_query = e.control.value or ""
         rebuild_ui()
+
+    search_box = ft.TextField(
+        value="",
+        label="Search by single letter, full name, email, or department",
+        prefix_icon=ft.Icons.SEARCH,
+        border_color=COLOR_PURPLE,
+        focused_border_color=COLOR_BLUE,
+        on_change=on_search_change,
+        expand=True,
+    )
+
+    def refresh_dashboard_results():
+        prayer_data = load_json("prayer")
+        mem_data = load_json("membership")
+        vol_data = load_json("volunteer")
+            
+        filtered_prayers = [(idx, p) for idx, p in enumerate(prayer_data) if search_record(p, search_query)]
+        filtered_members = [(idx, m) for idx, m in enumerate(mem_data) if search_record(m, search_query)]
+        filtered_volunteers = [(idx, v) for idx, v in enumerate(vol_data) if search_record(v, search_query)]
+
+        empty_msg =(
+                f"No matching records for '{search_query.strip()}'"
+                if search_query.strip()
+                else "No records found"
+            )  
+
+        prayer_list_view.controls = [
+            format_record_card(
+                title=f"Prayer Requests {idx + 1}",
+                record=p,
+                file_key="prayer",
+                index=idx
+            )
+            for idx, p in filtered_prayers
+        ] or [ft.Text(empty_msg, color=COLOR_DARK_TEXT)]
+
+        membership_list_view.controls = [
+            format_record_card(
+                title=f"Membership Application {idx + 1}",
+                record=m,
+                file_key="membership",
+                index=idx
+            )
+            for idx, m in filtered_members
+        ] or [ft.Text(empty_msg, color=COLOR_DARK_TEXT)]
+            
+        volunteer_list_view.controls = [
+            format_record_card(
+                title=f"Volunteer Signup {idx + 1}",
+                record=v,
+                file_key="volunteer",
+                index=idx
+            )
+            for idx, v in filtered_volunteers
+        ] or [ft.Text(empty_msg, color=COLOR_DARK_TEXT)]
+
+        prayer_tab.label = f"Prayer Requests ({len(filtered_prayers)})"
+        membership_tab.label = f"Membership ({len(filtered_members)})"
+        volunteer_tab.label =f"Voluntters ({len(filtered_volunteers)})"
+
+        total_matches = len(filtered_prayers)  + len(filtered_volunteers) + len(filtered_members)
+        total_records = len(prayer_data) + len(mem_data) + len(vol_data)
+        summary_text.value = f"Showing {total_matches} of {total_records} total records"
+            
+        search_box.suffix_icon = (
+            ft.IconButton(
+                icon=ft.Icons.CLEAR,
+                tooltip="Clear search",
+                on_click=clear_search,
+            )
+            if search_query
+            else None
+        )    
     
     def clear_search(e):
         nonlocal search_query
@@ -357,75 +430,8 @@ def main(page: ft.Page):
             return ft.Column([
                 ft.Text("Access Restricted. Minister credentials required", color=COLOR_PURPLE, size=16)
             ])
-    
-        prayer_data = load_json("prayer")
-        mem_data = load_json("membership")
-        vol_data = load_json("volunteer")
-    
-        filtered_prayers = [(idx, p) for idx, p in enumerate(prayer_data) if search_record(p, search_query)]
-        filtered_members = [(idx, m) for idx, m in enumerate(mem_data) if search_record(m, search_query)]
-        filtered_volunteers = [(idx, v) for idx, v in enumerate(vol_data) if search_record(v, search_query)]
-    
-        empty_msg =(
-            f"No matching records for '{search_query.strip()}'"
-            if search_query.strip()
-            else "No records found"
-        )
-    
-        prayer_cards = [
-            format_record_card(
-                title=f"Prayer Requests {idx + 1}",
-                record=p,
-                file_key="prayer",
-                index=idx
-            )
-            for idx, p in filtered_prayers
-        ] or [ft.Text(empty_msg, color=COLOR_DARK_TEXT)]
-    
-        membership_cards = [
-            format_record_card(
-                title=f"Membership Application {idx + 1}",
-                record=m,
-                file_key="membership",
-                index=idx
-            )
-            for idx, m in filtered_members
-        ] or [ft.Text(empty_msg, color=COLOR_DARK_TEXT)]
-    
-        volunteer_cards = [
-            format_record_card(
-                title=f"Volunteer Signup {idx + 1}",
-                record=v,
-                file_key="volunteer",
-                index=idx
-            )
-            for idx, v in filtered_volunteers
-        ] or [ft.Text(empty_msg, color=COLOR_DARK_TEXT)]
-    
-        prayer_tab.label = f"Prayer Requests ({len(filtered_prayers)})"
-        member_tab.label = f"Membership ({len(filtered_members)})"
-        volunteer_tab.label =f"Voluntters ({len(filtered_volunteers)})"
-    
-        search_box = ft.TextField(
-            value=search_query,
-            label="Search by person (name, email, department)",
-            prefix_icon=ft.Icons.SEARCH,
-            suffix_icon=ft.IconButton(
-            icon=ft.Icons.CLEAR,
-                tooltip="Clear Search",
-                on_click=clear_search,
-            )
-            if search_query
-            else None,
-            border_color=COLOR_PURPLE,
-            focused_border_color=COLOR_BLUE,
-            on_change=on_search_change,
-            expand=True
-        )
-    
-        total_matches = len(filtered_prayers)  + len(filtered_volunteers) + len(filtered_members)
-        total_records = len(prayer_data) + len(mem_data) + len(vol_data)
-    
+
+        refresh_dashboard_results()
     
         dashboard_tabs = ft.Tabs(
             length=3,
@@ -437,17 +443,15 @@ def main(page: ft.Page):
                         label_color=COLOR_PURPLE,
                         unselected_label_color=COLOR_BLUE,
                         tabs=[
-                            ft.Tab(label=f"Prayer Requests ({len(filtered_prayers)})"),
-                            ft.Tab(label=f"Memberships ({len(filtered_members)})"),
-                            ft.Tab(label=f"Volunteers ({len(filtered_volunteers)})"),
+                            prayer_tab, membership_tab, volunteer_tab
                         ],
                     ),
                     ft.TabBarView(
                         height=360,
                         controls=[
-                            ft.ListView(prayer_cards, spacing=10, padding=10),
-                            ft.ListView(membership_cards, spacing=10, padding=10),
-                            ft.ListView(volunteer_cards, spacing=10, padding=10)
+                           prayer_list_view,
+                           membership_list_view,
+                           volunteer_list_view
                         ],
                     ),
                 ]
@@ -460,7 +464,7 @@ def main(page: ft.Page):
                 ft.Row(
                     [search_box], alignment=ft.MainAxisAlignment.START
                 ),
-                ft.Text(f"Showing {total_matches} of {total_matches} total records", size=13, color=COLOR_DARK_TEXT),
+                summary_text,
                 dashboard_tabs,
             ],
             expand=True,
