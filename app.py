@@ -54,7 +54,7 @@ def delete_json_record(key, index):
 def update_json_record(key, index, updated_record):
     path= FILES.get(key)
     data = load_json(key)
-    if 0 <= len(data):
+    if 0 <= index < len(data):
         data[index] = updated_record
         with open(path, "w", encoding="utf-8") as file:
             json.dump(data, file, indent=4)
@@ -66,8 +66,15 @@ def main(page: ft.Page):
     page.bgcolor = COLOR_WHITE
     page.padding = 0
 
+    #useful for limited access
     is_minister = False
+
+    #useful for switching btn tabs
     current_tab = 0
+
+    #search box related variables
+    search_query = ""
+
 
     # --- NOTIFICATION ---
     def notify(msg, bg_color=COLOR_GREEN, text_color=COLOR_WHITE):
@@ -93,10 +100,11 @@ def main(page: ft.Page):
         page.update()
 
     def perform_login(e):
-        nonlocal is_minister
+        nonlocal is_minister, search_query
 
         if username_input.value == "minister" and password_input.value == "grace2026":
             is_minister = True
+            search_query = ""
             username_input.value = ""
             password_input.value = ""
             login_dialog.open = False
@@ -106,8 +114,9 @@ def main(page: ft.Page):
             notify("Invalid credentials!", COLOR_PURPLE)
 
     def perform_logout(e):
-        nonlocal is_minister, current_tab
+        nonlocal is_minister, current_tab, search_query
         is_minister = False
+        search_query = ""
         if current_tab == 4:
             current_tab = 0
         notify("Logged out", COLOR_BLUE)
@@ -226,7 +235,239 @@ def main(page: ft.Page):
         border_color=COLOR_GOLD,
     )
 
+    # --- PERSISTENT DASHBOARD CONTROLS (SO TYPING NEVER LOSES FOCUS) ---
+    summary_text = ft.Text("", size=13, color=COLOR_DARK_TEXT)
+    prayer_list_view = ft.ListView(spacing=10, padding=10)
+    membership_list_view = ft.ListView(spacing=10, padding=10)
+    volunteer_list_view = ft.ListView(spacing=10, padding=10)
+    prayer_tab = ft.Tab(label="Prayer Requests (0)")
+    membership_tab = ft.Tab(label="Memberships (0)")
+    volunteer_tab = ft.Tab(label="Volunteers (0)")
+
+    def open_edit_dialog(file_key:str, index:int, record: dict):
+        #create a a textfield for every existing field in the JSON object (including any extra fields)
+        field_inputs = {}
+        for k, v in record.items():
+            label_text = k.replace("_", "  ").title()
+            is_long = len(str(v or"")) > 60
+            field_inputs[k] = ft.TextField(
+                label=label_text,
+                value="" if v is None else str(v),
+                multiline=is_long,
+                max_lines=4 if is_long else 1,
+                border_color=COLOR_BLUE,
+                width=320
+            )
+    
+            
+        def close_edit(e=None):
+            edit_dialog.open = False
+            page.update()
+    
+        def save_changes(e):
+            updated = {k:tf.value for k, tf in field_inputs.items()}
+            if update_json_record(file_key, index, updated):
+                edit_dialog.open = False
+                notify("Record updated successfully!", COLOR_GREEN)
+                rebuild_ui()
+            else:
+                notify("Could not update record.", COLOR_PURPLE)
+    
+        edit_dialog = ft.AlertDialog(
+            title=ft.Text(f'Edit Record #{index +  1}', color=COLOR_BLUE, weight=ft.FontWeight.BOLD),
+            content=ft.Column(list(field_inputs.values()), tight=True, scroll=ft.ScrollMode.AUTO),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_edit),
+                ft.Button("Save Changes", bgcolor=COLOR_GREEN, color=COLOR_WHITE, on_click=save_changes)
+            ]
+        )
+    
+        edit_dialog.open = True
+        page.show_dialog(edit_dialog)
+    
+    def handle_delete_record(file_key: str, index:int):
+            if delete_json_record(file_key, index):
+                notify("Record deleted!", COLOR_PURPLE)
+                rebuild_ui()
+            else:
+                notify("Could not delete record", COLOR_PURPLE)
+            
+    def format_record_card(title: str, record: dict, file_key: str, index:int):
+        #automatically renders alll keys in 'record', including any extra fields you add
+        field_controls = [
+            ft.Text(
+                f"{key.replace('_','_').title()}: {val if val not in (None, '') else 'N/A'}",
+                size=14,
+                color=COLOR_DARK_TEXT
+            )
+            for key, val in record.items()
+        ]
+    
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Text(title, size=15, weight=ft.FontWeight.BOLD, color=COLOR_BLUE),
+                    ft.Row([
+                        ft.IconButton(
+                            icon=ft.Icons.EDIT,
+                            tooltip="Edit Record",
+                            icon_color=COLOR_BLUE,
+                            on_click=lambda e, k=file_key, i=index, r=record: open_edit_dialog(k, i, r)
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.DELETE,
+                            tooltip="Delete record",
+                            icon_color=COLOR_PURPLE,
+                            on_click=lambda e, k=file_key, i=index: handle_delete_record(k, i)
+                        )  
+                    ], spacing=0)
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                *field_controls
+            ], spacing=4),
+            bgcolor="#F9F9F9",
+            border=ft.Border.all(1, COLOR_GOLD),
+            border_radius=8,
+            padding=12
+        )
+    
+    def search_record(record: dict, query: str) -> bool:
+        tokens = query.strip().lower().split()
+        if not tokens:
+            return True
+    
+        #Combine all fields in the record
+        combine_text = " ".join(str(val or "").lower() for val in record.values())
+    
+        #every word must appear somewhere in the record  
+        return all(token in combine_text for token in tokens)
+    
+    def on_search_change(e):
+        nonlocal search_query
+        search_query = e.control.value or ""
+        rebuild_ui()
+    
+    def clear_search(e):
+        nonlocal search_query
+        search_query = ""
+        rebuild_ui()
+
     # --- VIEWS ---
+    def dashboard_view():
+        if not is_minister:
+            return ft.Column([
+                ft.Text("Access Restricted. Minister credentials required", color=COLOR_PURPLE, size=16)
+            ])
+    
+        prayer_data = load_json("prayer")
+        mem_data = load_json("membership")
+        vol_data = load_json("volunteer")
+    
+        filtered_prayers = [(idx, p) for idx, p in enumerate(prayer_data) if search_record(p, search_query)]
+        filtered_members = [(idx, m) for idx, m in enumerate(mem_data) if search_record(m, search_query)]
+        filtered_volunteers = [(idx, v) for idx, v in enumerate(vol_data) if search_record(v, search_query)]
+    
+        empty_msg =(
+            f"No matching records for '{search_query.strip()}'"
+            if search_query.strip()
+            else "No records found"
+        )
+    
+        prayer_cards = [
+            format_record_card(
+                title=f"Prayer Requests {idx + 1}",
+                record=p,
+                file_key="prayer",
+                index=idx
+            )
+            for idx, p in filtered_prayers
+        ] or [ft.Text(empty_msg, color=COLOR_DARK_TEXT)]
+    
+        membership_cards = [
+            format_record_card(
+                title=f"Membership Application {idx + 1}",
+                record=m,
+                file_key="membership",
+                index=idx
+            )
+            for idx, m in filtered_members
+        ] or [ft.Text(empty_msg, color=COLOR_DARK_TEXT)]
+    
+        volunteer_cards = [
+            format_record_card(
+                title=f"Volunteer Signup {idx + 1}",
+                record=v,
+                file_key="volunteer",
+                index=idx
+            )
+            for idx, v in filtered_volunteers
+        ] or [ft.Text(empty_msg, color=COLOR_DARK_TEXT)]
+    
+        prayer_tab.label = f"Prayer Requests ({len(filtered_prayers)})"
+        member_tab.label = f"Membership ({len(filtered_members)})"
+        volunteer_tab.label =f"Voluntters ({len(filtered_volunteers)})"
+    
+        search_box = ft.TextField(
+            value=search_query,
+            label="Search by person (name, email, department)",
+            prefix_icon=ft.Icons.SEARCH,
+            suffix_icon=ft.IconButton(
+            icon=ft.Icons.CLEAR,
+                tooltip="Clear Search",
+                on_click=clear_search,
+            )
+            if search_query
+            else None,
+            border_color=COLOR_PURPLE,
+            focused_border_color=COLOR_BLUE,
+            on_change=on_search_change,
+            expand=True
+        )
+    
+        total_matches = len(filtered_prayers)  + len(filtered_volunteers) + len(filtered_members)
+        total_records = len(prayer_data) + len(mem_data) + len(vol_data)
+    
+    
+        dashboard_tabs = ft.Tabs(
+            length=3,
+            selected_index=0,
+            content=ft.Column(
+                [
+                    ft.TabBar(
+                        indicator_color=COLOR_GOLD,
+                        label_color=COLOR_PURPLE,
+                        unselected_label_color=COLOR_BLUE,
+                        tabs=[
+                            ft.Tab(label=f"Prayer Requests ({len(filtered_prayers)})"),
+                            ft.Tab(label=f"Memberships ({len(filtered_members)})"),
+                            ft.Tab(label=f"Volunteers ({len(filtered_volunteers)})"),
+                        ],
+                    ),
+                    ft.TabBarView(
+                        height=360,
+                        controls=[
+                            ft.ListView(prayer_cards, spacing=10, padding=10),
+                            ft.ListView(membership_cards, spacing=10, padding=10),
+                            ft.ListView(volunteer_cards, spacing=10, padding=10)
+                        ],
+                    ),
+                ]
+            ),
+        )
+    
+        return ft.ListView(
+            [
+                ft.Text("Minister Data Dashboard", size=22, weight=ft.FontWeight.BOLD, color=COLOR_BLUE),
+                ft.Row(
+                    [search_box], alignment=ft.MainAxisAlignment.START
+                ),
+                ft.Text(f"Showing {total_matches} of {total_matches} total records", size=13, color=COLOR_DARK_TEXT),
+                dashboard_tabs,
+            ],
+            expand=True,
+            spacing=15,
+        )
+    
+
     def get_home_view():
         home_tabs = ft.Tabs(
             length=3,
@@ -452,167 +693,6 @@ def main(page: ft.Page):
 
         return ft.ListView(controls, expand=True, spacing=15)
 
-    def open_edit_dialog(file_key:str, index:int, record: dict):
-        #create a a textfield for every existing field in the JSON object (including any extra fields)
-        field_inputs = {}
-        for k, v in record.items():
-            label_text = k.replace("_", "  ").title()
-            is_long = len(str(v or"")) > 60
-            field_inputs[k] = ft.TextField(
-                label=label_text,
-                value="" if v is None else str(v),
-                multiline=is_long,
-                max_lines=4 if is_long else 1,
-                border_color=COLOR_BLUE,
-                width=320
-            )
-
-        
-        def close_edit(e=None):
-            edit_dialog.open = False
-            page.update()
-
-        def save_changes(e):
-            updated = {k:tf.value for k, tf in field_inputs.items()}
-            if update_json_record(file_key, index, updated):
-                edit_dialog.open = False
-                notify("Record updated successfully!", COLOR_GREEN)
-                rebuild_ui()
-            else:
-                notify("Could not update record.", COLOR_PURPLE)
-
-        edit_dialog = ft.AlertDialog(
-            title=ft.Text(f'Edit Record #{index +  1}', color=COLOR_BLUE, weight=ft.FontWeight.BOLD),
-            content=ft.Column(list(field_inputs.values()), tight=True, scroll=ft.ScrollMode.AUTO),
-            actions=[
-                ft.TextButton("Cancel", on_click=close_edit),
-                ft.Button("Save Changes", bgcolor=COLOR_GREEN, color=COLOR_WHITE, on_click=save_changes)
-            ]
-        )
-
-        edit_dialog.open = True
-        page.show_dialog(edit_dialog)
-
-    def handle_delete_record(file_key: str, index:int):
-        if delete_json_record(file_key, index):
-            notify("Record deleted!", COLOR_PURPLE)
-            rebuild_ui()
-        else:
-            notify("Could not delete record", COLOR_PURPLE)
-        
-    def format_record_card(title: str, record: dict, file_key: str, index:int):
-        #automatically renders alll keys in 'record', including any extra fields you add
-        field_controls = [
-            ft.Text(
-                f"{key.replace('_','_').title()}: {val if val not in (None, '') else 'N/A'}",
-                size=14,
-                color=COLOR_DARK_TEXT
-            )
-            for key, val in record.items()
-        ]
-
-        return ft.Container(
-            content=ft.Column([
-                ft.Row([
-                    ft.Text(title, size=15, weight=ft.FontWeight.BOLD, color=COLOR_BLUE),
-                    ft.Row([
-                        ft.IconButton(
-                            icon=ft.Icons.EDIT,
-                            tooltip="Edit Record",
-                            icon_color=COLOR_BLUE,
-                            on_click=lambda e, k=file_key, i=index, r=record: open_edit_dialog(k, i, r)
-                        ),
-                        ft.IconButton(
-                            icon=ft.Icons.DELETE,
-                            tooltip="Delete record",
-                            icon_color=COLOR_PURPLE,
-                            on_click=lambda e, k=file_key, i=index: handle_delete_record(k, i)
-                        )  
-                    ], spacing=0)
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                *field_controls
-            ], spacing=4),
-            bgcolor="#F9F9F9",
-            border=ft.Border.all(1, COLOR_GOLD),
-            border_radius=8,
-            padding=12
-        )
-    def dashboard_view():
-        if not is_minister:
-            return ft.Column([
-                ft.Text("Access Restricted. Minister credentials required", color=COLOR_PURPLE, size=16)
-            ])
-
-        prayer_data = load_json("prayer")
-        mem_data = load_json("membership")
-        vol_data = load_json("volunteer")
-
-        prayer_cards = [
-            format_record_card(
-                title=f"Prayer Requests {idx + 1}",
-                record=p,
-                file_key="prayer",
-                index=idx
-            )
-            for idx, p in enumerate(prayer_data)
-        ] or [ft.Text("No prayer request found", color=COLOR_DARK_TEXT)]
-
-        membership_cards = [
-            format_record_card(
-                title=f"Membership Application {idx + 1}",
-                record=m,
-                file_key="membership",
-                index=idx
-            )
-            for idx, m in enumerate(mem_data)
-        ] or [ft.Text("No memberships applications found.", color=COLOR_DARK_TEXT)]
-
-        volunteer_cards = [
-            format_record_card(
-                title=f"Volunteer Signup {idx + 1}",
-                record=v,
-                file_key="volunteer",
-                index=idx
-            )
-            for idx, v in enumerate(vol_data)
-        ] or [ft.Text("No volunteer signup found", color=COLOR_DARK_TEXT)]
-
-        dashboard_tabs = ft.Tabs(
-            length=3,
-            selected_index=0,
-            content=ft.Column(
-                [
-                    ft.TabBar(
-                        indicator_color=COLOR_GOLD,
-                        label_color=COLOR_PURPLE,
-                        unselected_label_color=COLOR_BLUE,
-                        tabs=[
-                            ft.Tab(label=f"Prayer Requests ({len(prayer_data)})"),
-                            ft.Tab(label=f"Memberships ({len(mem_data)})"),
-                            ft.Tab(label=f"Volunteers ({len(vol_data)})"),
-                        ],
-                    ),
-                    ft.TabBarView(
-                        height=360,
-                        controls=[
-                           ft.ListView(prayer_cards, spacing=10, padding=10),
-                           ft.ListView(membership_cards, spacing=10, padding=10),
-                           ft.ListView(volunteer_cards, spacing=10, padding=10)
-                        ],
-                    ),
-                ]
-            ),
-        )
-
-        return ft.ListView(
-            [
-                ft.Text("Minister Data Dashboard", size=22, weight=ft.FontWeight.BOLD, color=COLOR_BLUE),
-                ft.Text("Credential Records", color=COLOR_DARK_TEXT),
-                dashboard_tabs,
-            ],
-            expand=True,
-            spacing=15,
-        )
 
     # --- NAVIGATION BAR & ROUTING ---
     def navigate(e):
